@@ -1,0 +1,10 @@
+.git
+.gitignore
+node_modules
+.aws-sam
+README.md
+*.log
+*.md
+template.yaml
+packaged.yaml
+samconfig.toml

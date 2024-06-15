@@ -1,0 +1,140 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: creating infrastructure for wish app
+
+Resources:
+  EmployeesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: Employees
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: N
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+  
+  SNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: WishAppSNSTopic
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: DynamoDBAccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:BatchWriteItem
+                  - dynamodb:PutItem
+                  - dynamodb:Scan
+                Resource:
+                  - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/Employees
+        - PolicyName: CloudWatchLogsPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: 'arn:aws:logs:*:*:*'
+        - PolicyName: SnsTopicPublishPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: !Ref SNSTopic
+
+  ApiLambdaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/populateTable.handler
+      Runtime: nodejs18.x
+      CodeUri: .
+      MemorySize: 128
+      Timeout: 30
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Policies: 
+        - AWSLambdaBasicExecutionRole
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref EmployeesTable
+  
+  SendLambdaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/sendTextEmp.handler
+      Runtime: nodejs18.x
+      CodeUri: .
+      MemorySize: 128
+      Timeout: 30
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Policies: 
+        - AWSLambdaBasicExecutionRole
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref EmployeesTable
+          SNS_TOPIC_ARN: !Ref SNSTopic
+  
+  # ApiGateway:
+  #   Type: AWS::Serverless::Api
+  #   Properties:
+  #     StageName: Prod
+  #     DefinitionBody:
+  #       swagger: 2.0
+  #       info:
+  #         title: EmployeeAPI
+  #         description: API for managing employees
+  #       paths:
+  #         /employees:
+  #           post:
+  #             x-amazon-apigateway-integration:
+  #               uri:
+  #                 Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ApiLambdaFunction.Arn}/invocations
+  #               httpMethod: POST
+  #               type: aws_proxy
+
+  # LambdaApiPermission:
+  #   Type: AWS::Lambda::Permission
+  #   Properties:
+  #     FunctionName: !GetAtt ApiLambdaFunction.Arn
+  #     Action: lambda:InvokeFunction
+  #     Principal: apigateway.amazonaws.com
+  #     SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/POST/employees
+
+Outputs:
+  # ApiUrl:
+  #   Description: "API Gateway endpoint URL"
+  #   Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/Prod/employees"
+  EmployeesTableName:
+    Description: "DynamoDB table name"
+    Value: !Ref EmployeesTable
+  LambdaFunctionName:
+    Description: "Lambda function name"
+    Value: !Ref ApiLambdaFunction
+  SendLambdaFunctionName:
+    Description: "Send Lambda function name"
+    Value: !Ref SendLambdaFunction
+  SNSTopicArn:
+    Description: "SNS Topic ARN"
+    Value: !Ref SNSTopic
+
+
